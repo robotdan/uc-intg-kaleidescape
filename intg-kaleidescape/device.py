@@ -197,26 +197,41 @@ class KaleidescapePlayer:
             _LOG.debug("Cannot send command: '%s' device is powered off", message.strip())
             return
 
-        with socket.create_connection((self.host, port), timeout=timeout) as sock:
-            sock.sendall(message.encode("utf-8"))
+        try:
+            with socket.create_connection((self.host, port), timeout=timeout) as sock:
+                sock.sendall(message.encode("utf-8"))
+        except OSError as e:
+            _LOG.error("Socket command failed for '%s': %s", message.strip(), e)
 
     async def power_on(self) -> ucapi.StatusCodes:
         """Power on the device. Reconnects if not currently connected."""
-
-        if self._connected:
+        if not self._connected:
+            return ucapi.StatusCodes.SERVICE_UNAVAILABLE
+        if self._attr_state == MediaStates.ON:
+            _LOG.debug("Device already on, skipping leave_standby")
+            return ucapi.StatusCodes.OK
+        try:
             _LOG.debug("Sending leave_standby...")
             await self.device.leave_standby()
             return ucapi.StatusCodes.OK
-        return ucapi.StatusCodes.SERVICE_UNAVAILABLE
+        except Exception as e:
+            _LOG.error("Failed to power on: %s", e)
+            return ucapi.StatusCodes.SERVER_ERROR
 
-    async def power_off(self)-> ucapi.StatusCodes:
+    async def power_off(self) -> ucapi.StatusCodes:
         """Power off the device. Reconnects if not currently connected."""
-
-        if self._connected:
+        if not self._connected:
+            return ucapi.StatusCodes.SERVICE_UNAVAILABLE
+        if self._attr_state == MediaStates.STANDBY:
+            _LOG.debug("Device already in standby, skipping enter_standby")
+            return ucapi.StatusCodes.OK
+        try:
             _LOG.debug("Sending enter_standby...")
             await self.device.enter_standby()
             return ucapi.StatusCodes.OK
-        return ucapi.StatusCodes.SERVICE_UNAVAILABLE
+        except Exception as e:
+            _LOG.error("Failed to power off: %s", e)
+            return ucapi.StatusCodes.SERVER_ERROR
 
     async def alphabetize_cover_art(self) -> ucapi.StatusCodes:
         """Trigger the 'alphabetize_cover_art' command."""
@@ -402,7 +417,7 @@ class KaleidescapePlayer:
         self._send_socket_command("01/9/SUBTITLES_NEXT:\r")
         return ucapi.StatusCodes.OK
 
-    async def _on_event(self, event: str):
+    async def _on_event(self, event: str, params: dict | None = None):
         """Handle device connection state changes based on incoming event."""
         if event == "":
             return
@@ -489,6 +504,7 @@ class KaleidescapePlayer:
     async def _handle_events(self, event: str):
         _LOG.warning("Event received: %s", event)
         _LOG.warning("OSD: %s", self.device.osd)
+        await self._handle_power_state()
         await self._handle_play_status()
 
         await self._emit_update(
