@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import socket
 import time
 from asyncio import AbstractEventLoop
 from dataclasses import asdict, dataclass
@@ -136,6 +135,11 @@ class KaleidescapePlayer:
                 await self.device.connect()
                 await asyncio.sleep(0.5)
                 self._connected = True
+                # Note: _handle_connected() also calls _sync_full_state() when the
+                # dispatcher fires STATE_CONNECTED. This second call is intentional —
+                # it ensures state is synced before connect() returns. Both calls read
+                # from pykaleidescape's in-memory cache (zero I/O) and
+                # _handle_power_state() skips emitting if unchanged, so it's benign.
                 await self._sync_full_state()
                 return True
             except (KaleidescapeError, ConnectionError) as err:
@@ -185,7 +189,7 @@ class KaleidescapePlayer:
             _LOG.error("Failed to send command '%s': %s", command, e)
             return ucapi.StatusCodes.SERVER_ERROR
 
-    def _send_socket_command(self, message: str, *, port: int = 10000, timeout: int = 2) -> None:
+    async def _send_socket_command(self, message: str, *, port: int = 10000, timeout: int = 2) -> None:
         """Send a raw socket command to the device if it is powered on.
 
         Args:
@@ -198,9 +202,15 @@ class KaleidescapePlayer:
             return
 
         try:
-            with socket.create_connection((self.host, port), timeout=timeout) as sock:
-                sock.sendall(message.encode("utf-8"))
-        except OSError as e:
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(self.host, port), timeout=timeout
+            )
+            try:
+                writer.write(message.encode("utf-8"))
+                await writer.drain()
+            finally:
+                writer.close()
+        except (OSError, asyncio.TimeoutError) as e:
             _LOG.error("Socket command failed for '%s': %s", message.strip(), e)
 
     async def power_on(self) -> ucapi.StatusCodes:
@@ -214,7 +224,7 @@ class KaleidescapePlayer:
             _LOG.debug("Sending leave_standby...")
             await self.device.leave_standby()
             return ucapi.StatusCodes.OK
-        except Exception as e:
+        except (KaleidescapeError, ConnectionError, OSError) as e:
             _LOG.error("Failed to power on: %s", e)
             return ucapi.StatusCodes.SERVER_ERROR
 
@@ -229,13 +239,13 @@ class KaleidescapePlayer:
             _LOG.debug("Sending enter_standby...")
             await self.device.enter_standby()
             return ucapi.StatusCodes.OK
-        except Exception as e:
+        except (KaleidescapeError, ConnectionError, OSError) as e:
             _LOG.error("Failed to power off: %s", e)
             return ucapi.StatusCodes.SERVER_ERROR
 
     async def alphabetize_cover_art(self) -> ucapi.StatusCodes:
         """Trigger the 'alphabetize_cover_art' command."""
-        self._send_socket_command("01/7/ALPHABETIZE_COVER_ART:\r")
+        await self._send_socket_command("01/7/ALPHABETIZE_COVER_ART:\r")
         return ucapi.StatusCodes.OK
 
     async def back(self) -> ucapi.StatusCodes:
@@ -252,7 +262,7 @@ class KaleidescapePlayer:
 
     async def collections(self) -> ucapi.StatusCodes:
         """Trigger the 'go movie collections' command."""
-        self._send_socket_command("01/1/GO_MOVIE_COLLECTIONS:\r")
+        await self._send_socket_command("01/1/GO_MOVIE_COLLECTIONS:\r")
         return ucapi.StatusCodes.OK
 
     async def cursor_down(self) -> ucapi.StatusCodes:
@@ -287,12 +297,12 @@ class KaleidescapePlayer:
 
     async def intermission_toggle(self) -> ucapi.StatusCodes:
         """Trigger the 'intermission toggle' command."""
-        self._send_socket_command("01/1/INTERMISSION_TOGGLE:\r")
+        await self._send_socket_command("01/1/INTERMISSION_TOGGLE:\r")
         return ucapi.StatusCodes.OK
 
     async def list(self) -> ucapi.StatusCodes:
         """Trigger the 'go movie list' command."""
-        self._send_socket_command("01/1/GO_MOVIE_LIST:\r")
+        await self._send_socket_command("01/1/GO_MOVIE_LIST:\r")
         return ucapi.StatusCodes.OK
 
     async def media_next_track(self) -> ucapi.StatusCodes:
@@ -333,7 +343,7 @@ class KaleidescapePlayer:
 
     async def menu(self) -> ucapi.StatusCodes:
         """Trigger the 'disc_or_kaleidescape_menu' command."""
-        self._send_socket_command("01/6/DISC_OR_KALEIDESCAPE_MENU:\r")
+        await self._send_socket_command("01/6/DISC_OR_KALEIDESCAPE_MENU:\r")
         return ucapi.StatusCodes.OK
 
     async def movie_covers(self) -> ucapi.StatusCodes:
@@ -346,32 +356,32 @@ class KaleidescapePlayer:
 
     async def page_up(self) -> ucapi.StatusCodes:
         """Trigger the 'page_up' command."""
-        self._send_socket_command("01/6/PAGE_UP:\r")
+        await self._send_socket_command("01/6/PAGE_UP:\r")
         return ucapi.StatusCodes.OK
 
     async def page_up_press(self) -> ucapi.StatusCodes:
         """Trigger the 'page_up_press' command."""
-        self._send_socket_command("01/6/PAGE_UP_PRESS:\r")
+        await self._send_socket_command("01/6/PAGE_UP_PRESS:\r")
         return ucapi.StatusCodes.OK
 
     async def page_up_release(self) -> ucapi.StatusCodes:
         """Trigger the 'page_up_release' command."""
-        self._send_socket_command("01/6/PAGE_UP_RELEASE:\r")
+        await self._send_socket_command("01/6/PAGE_UP_RELEASE:\r")
         return ucapi.StatusCodes.OK
 
     async def page_down(self) -> ucapi.StatusCodes:
         """Trigger the 'page_down' command."""
-        self._send_socket_command("01/6/PAGE_DOWN:\r")
+        await self._send_socket_command("01/6/PAGE_DOWN:\r")
         return ucapi.StatusCodes.OK
 
     async def page_down_press(self) -> ucapi.StatusCodes:
         """Trigger the 'page_down_press' command."""
-        self._send_socket_command("01/6/PAGE_DOWN_PRESS:\r")
+        await self._send_socket_command("01/6/PAGE_DOWN_PRESS:\r")
         return ucapi.StatusCodes.OK
 
     async def page_down_release(self) -> ucapi.StatusCodes:
         """Trigger the 'page_down_release' command."""
-        self._send_socket_command("01/6/PAGE_DOWN_RELEASE:\r")
+        await self._send_socket_command("01/6/PAGE_DOWN_RELEASE:\r")
         return ucapi.StatusCodes.OK
 
     async def play_pause(self) -> ucapi.StatusCodes:
@@ -388,7 +398,7 @@ class KaleidescapePlayer:
 
     async def replay(self) -> ucapi.StatusCodes:
         """Trigger the 'replay' command."""
-        self._send_socket_command("01/6/REPLAY:\r")
+        await self._send_socket_command("01/6/REPLAY:\r")
         return ucapi.StatusCodes.OK
 
     async def rewind(self) -> ucapi.StatusCodes:
@@ -399,25 +409,25 @@ class KaleidescapePlayer:
 
     async def shuffle_cover_art(self) -> ucapi.StatusCodes:
         """Trigger the 'shuffle_cover_art' command."""
-        self._send_socket_command("01/6/SHUFFLE_COVER_ART:\r")
+        await self._send_socket_command("01/6/SHUFFLE_COVER_ART:\r")
         return ucapi.StatusCodes.OK
 
     async def movie_store(self) -> ucapi.StatusCodes:
         """Trigger the 'go_movie_store' command."""
-        self._send_socket_command("01/6/GO_MOVIE_STORE:\r")
+        await self._send_socket_command("01/6/GO_MOVIE_STORE:\r")
         return ucapi.StatusCodes.OK
 
     async def search(self) -> ucapi.StatusCodes:
         """Trigger the 'go_search' command."""
-        self._send_socket_command("01/9/GO_SEARCH:\r")
+        await self._send_socket_command("01/9/GO_SEARCH:\r")
         return ucapi.StatusCodes.OK
 
     async def subtitles(self) -> ucapi.StatusCodes:
         """Trigger the 'subtitles_next' command."""
-        self._send_socket_command("01/9/SUBTITLES_NEXT:\r")
+        await self._send_socket_command("01/9/SUBTITLES_NEXT:\r")
         return ucapi.StatusCodes.OK
 
-    async def _on_event(self, event: str, params: dict | None = None):
+    async def _on_event(self, event: str, params: list[str] | None = None):
         """Handle device connection state changes based on incoming event."""
         if event == "":
             return
@@ -525,6 +535,7 @@ class KaleidescapePlayer:
 
     async def _handle_events(self, event: str):
         _LOG.debug("Event received: %s", event)
+        _LOG.debug("OSD: %s", self.device.osd)
         await self._sync_full_state()
 
     def _start_position_updater(self):
