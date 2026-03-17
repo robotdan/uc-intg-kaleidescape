@@ -18,23 +18,23 @@ from typing import Type
 
 
 def setup_logger():
-    """Get logger from all modules"""
+    """Configure log levels for all integration modules.
 
+    Third-party libraries (ucapi, pykaleidescape) are left unconfigured:
+    - ucapi uses NullHandler, so it's silent unless explicitly enabled.
+    - pykaleidescape inherits WARNING from the root logger.
+    """
     level = os.getenv("UC_LOG_LEVEL", "DEBUG").upper()
 
-    logging.getLogger("ucapi.api").setLevel(level)
-    logging.getLogger("ucapi.entities").setLevel(level)
-    logging.getLogger("ucapi.entity").setLevel(level)
-    logging.getLogger("driver").setLevel(level)
-    logging.getLogger("config").setLevel(level)
-    logging.getLogger("discover").setLevel(level)
-    logging.getLogger("setup_flow").setLevel(level)
-    logging.getLogger("device").setLevel(level)
-    logging.getLogger("remote").setLevel(level)
-    logging.getLogger("media_player").setLevel(level)
-    logging.getLogger("registry").setLevel(level)
-    logging.getLogger("utils").setLevel(level)
-    #logging.getLogger("kaleidescape").setLevel(level)
+    for name in (
+        "driver", "config", "discover", "setup_flow",
+        "device", "remote", "media_player", "registry", "utils",
+    ):
+        logging.getLogger(name).setLevel(level)
+
+    # Uncomment for troubleshooting underlying libraries:
+    # logging.getLogger("ucapi").setLevel(logging.DEBUG)
+    # logging.getLogger("kaleidescape").setLevel(logging.DEBUG)
 
 
 
