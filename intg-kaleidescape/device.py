@@ -135,8 +135,8 @@ class KaleidescapePlayer:
             try:
                 await self.device.connect()
                 await asyncio.sleep(0.5)
-                await self._handle_power_state()
                 self._connected = True
+                await self._sync_full_state()
                 return True
             except (KaleidescapeError, ConnectionError) as err:
                 await self.device.disconnect()
@@ -437,7 +437,29 @@ class KaleidescapePlayer:
 
         await asyncio.sleep(1)
 
+        await self._sync_full_state()
+
+    async def _sync_full_state(self):
+        """Sync all device state after (re)connect to avoid stale data."""
+        _LOG.debug("[%s] Performing full state sync", self.device_id)
         await self._handle_power_state()
+        await self._handle_play_status()
+
+        await self._emit_update(
+            EntityPrefix.MEDIA_PLAYER.value, MediaAttr.MEDIA_IMAGE_URL, self.device.movie.cover)
+        await self._emit_update(
+            EntityPrefix.MEDIA_PLAYER.value, MediaAttr.MEDIA_TITLE, self.device.movie.title)
+        await self._emit_update(
+            EntityPrefix.MEDIA_PLAYER.value, MediaAttr.MEDIA_TYPE, self.device.movie.media_type)
+
+        self._position_seconds = self.device.movie.title_location or 0
+        self._last_position_update = time.monotonic()
+        await self._emit_update(
+            EntityPrefix.MEDIA_PLAYER.value, MediaAttr.MEDIA_POSITION, self._position_seconds)
+
+        self._duration_seconds = self.device.movie.title_length or 0
+        await self._emit_update(
+            EntityPrefix.MEDIA_PLAYER.value, MediaAttr.MEDIA_DURATION, self._duration_seconds)
 
     async def _handle_disconnected(self):
         """
@@ -502,28 +524,8 @@ class KaleidescapePlayer:
         await self._emit_update(EntityPrefix.REMOTE.value, MediaAttr.STATE, self.state)
 
     async def _handle_events(self, event: str):
-        _LOG.warning("Event received: %s", event)
-        _LOG.warning("OSD: %s", self.device.osd)
-        await self._handle_power_state()
-        await self._handle_play_status()
-
-        await self._emit_update(
-            EntityPrefix.MEDIA_PLAYER.value, MediaAttr.STATE, self.state)
-        await self._emit_update(
-            EntityPrefix.REMOTE.value, MediaAttr.STATE, self.state)
-        await self._emit_update(
-            EntityPrefix.MEDIA_PLAYER.value, MediaAttr.MEDIA_IMAGE_URL, self.device.movie.cover)
-        await self._emit_update(
-            EntityPrefix.MEDIA_PLAYER.value, MediaAttr.MEDIA_TITLE, self.device.movie.title)
-        await self._emit_update(
-            EntityPrefix.MEDIA_PLAYER.value, MediaAttr.MEDIA_TYPE, self.device.movie.media_type)
-
-        self._position_seconds = self.device.movie.title_location or 0
-        self._last_position_update = time.monotonic()
-        await self._emit_update(EntityPrefix.MEDIA_PLAYER.value, MediaAttr.MEDIA_POSITION, self._position_seconds)
-
-        self._duration_seconds = self.device.movie.title_length or 0
-        await self._emit_update(EntityPrefix.MEDIA_PLAYER.value, MediaAttr.MEDIA_DURATION, self._duration_seconds)
+        _LOG.debug("Event received: %s", event)
+        await self._sync_full_state()
 
     def _start_position_updater(self):
         if self._position_updater_task is None or self._position_updater_task.done():
