@@ -2,6 +2,7 @@
 """Kaleidescape Remote Two/3 Integration Driver."""
 
 import logging
+import os
 from typing import Any
 
 import config
@@ -16,6 +17,23 @@ from setup_flow import driver_setup_handler
 from ucapi.media_player import Attributes as MediaAttr
 from ucapi.media_player import States
 from utils import setup_logger
+
+
+class JournaldFormatter(logging.Formatter):
+    """Formatter for journald. Prefixes messages with syslog priority codes."""
+
+    PRIORITY_MAP = {
+        logging.DEBUG: "<6>",     # SD_INFO (Remote doesn't support debug level)
+        logging.INFO: "<5>",      # SD_NOTICE
+        logging.WARNING: "<4>",   # SD_WARNING
+        logging.ERROR: "<3>",     # SD_ERR
+        logging.CRITICAL: "<2>",  # SD_CRIT
+    }
+
+    def format(self, record):
+        priority = self.PRIORITY_MAP.get(record.levelno, "<6>")
+        return f"{priority}{record.name}: {record.getMessage()}"
+
 
 _LOG = logging.getLogger("driver")
 
@@ -278,13 +296,20 @@ async def _async_remove(device: KaleidescapePlayer) -> None:
 async def main():
     """Start the Remote Two integration driver."""
 
-    logging.basicConfig(
-        format=(
-            "%(asctime)s.%(msecs)03d | %(levelname)-8s | "
-            "%(name)-14s | %(message)s"
-        ),
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
+    if os.getenv("INVOCATION_ID"):
+        # Running under systemd on the Remote: timestamps are added by journald,
+        # use priority-coded formatter so the Remote's log viewer can parse severity.
+        handler = logging.StreamHandler()
+        handler.setFormatter(JournaldFormatter())
+        logging.basicConfig(handlers=[handler])
+    else:
+        logging.basicConfig(
+            format=(
+                "%(asctime)s.%(msecs)03d %(levelname)-8s %(name)s.%(funcName)s: "
+                "%(message)s"
+            ),
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
     setup_logger()
 
     _LOG.debug("Starting driver...")
