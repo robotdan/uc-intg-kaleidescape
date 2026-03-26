@@ -23,52 +23,40 @@ if ! docker system info > /dev/null 2>&1; then
 
   echo "Your user has an active console session, but Docker may not have launched."
   echo "Start Docker Desktop manually or reboot with login auto-start enabled."
-fi
-
-# Auto-detect integration directory
-INTG_DIR=$(find . -maxdepth 1 -type d -name 'intg-*' -exec basename {} \; | head -n 1)
-if [[ -z "$INTG_DIR" ]]; then
-  echo "Error: No directory matching intg-* found in the current folder."
   exit 1
 fi
 
-ARCHIVE_NAME="uc-${INTG_DIR}-aarch64.tar.gz"
-BUILD_ROOT="$PWD"
-STAGING_DIR="artifacts"
+INTG_DIR="intg-kaleidescape"
+PYINSTALLER_IMAGE="docker.io/unfoldedcircle/r2-pyinstaller:3.11.12"
+DRIVER_ID=$(jq -r .driver_id driver.json)
+VERSION=${1:-dev}
 
-# Create local temp dir
-TMPDIR=$(mktemp -d /tmp/intg-build.XXXXXX)
-echo "Working in local temp dir: $TMPDIR"
+echo "Building uc-intg-${DRIVER_ID} version ${VERSION}..."
 
-# Copy necessary files only
-cp -R "$INTG_DIR" "$TMPDIR/"
-cp driver.json requirements.txt assets/kaleidescape.png "$TMPDIR/"
+rm -rf dist build artifacts
 
-pushd "$TMPDIR" > /dev/null
-
-# Run build in Docker
 docker run --rm --name builder \
-  --user=$(id -u):$(id -g) \
-  -v "$TMPDIR":/workspace \
-  docker.io/unfoldedcircle/r2-pyinstaller:3.11.12 \
-  bash -c "cd /workspace && \
-    python -m pip install -q --disable-pip-version-check -r requirements.txt && \
-    pyinstaller --clean --onedir --name $INTG_DIR $INTG_DIR/driver.py"
+  --user="$(id -u):$(id -g)" \
+  -v "$(pwd):/workspace" \
+  "${PYINSTALLER_IMAGE}" \
+  bash -c \
+  "cd /workspace && \
+    python -m pip install -r requirements.txt && \
+    pyinstaller --clean --onedir --name driver \
+      --add-data driver.json:. \
+      --collect-all pykaleidescape \
+      --collect-all ucapi \
+      --paths . \
+      ${INTG_DIR}/driver.py"
 
-# Package result
-mkdir -p "$STAGING_DIR/bin"
-mv dist/"$INTG_DIR"/* "$STAGING_DIR/bin/"
-mv "$STAGING_DIR/bin/$INTG_DIR" "$STAGING_DIR/bin/driver"
-cp driver.json "$STAGING_DIR/"
-cp kaleidescape.png "$STAGING_DIR/"
-tar czf "$ARCHIVE_NAME" -C "$STAGING_DIR" .
+mkdir -p artifacts/bin
+mv dist/driver/* artifacts/bin/
+cp driver.json artifacts/
+cp Kaleidescape-Logo-Jewel.png artifacts/
 
-# Copy archive back
-cp "$ARCHIVE_NAME" "$BUILD_ROOT/"
+ARTIFACT_NAME="uc-intg-${DRIVER_ID}-${VERSION}-aarch64.tar.gz"
+tar czf "${ARTIFACT_NAME}" -C artifacts .
 
-popd > /dev/null
-rm -rf "$TMPDIR"
-
-# Show archive size
-SIZE_MB=$(du -m "$BUILD_ROOT/$ARCHIVE_NAME" | cut -f1)
-echo "Archive created: $ARCHIVE_NAME (${SIZE_MB} MB)"
+SIZE_MB=$(du -m "${ARTIFACT_NAME}" | cut -f1)
+echo ""
+echo "Build complete: ${ARTIFACT_NAME} (${SIZE_MB} MB)"
