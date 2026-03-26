@@ -176,9 +176,9 @@ def _configure_new_kaleidescape(info: KaleidescapeInfo, connect: bool = False) -
     :param connect: Whether to initiate connection immediately.
     """
 
-    player = get_device(info.id)
-    if player:
-        player.disconnect()
+    device = get_device(info.id)
+    if device:
+        loop.create_task(device.disconnect())
     else:
         device = KaleidescapePlayer(info.host, device_id=info.id)
 

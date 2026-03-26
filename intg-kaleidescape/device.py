@@ -1,5 +1,7 @@
 """Provides connection utilities for communicating with a Kaleidescape Player."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -135,11 +137,8 @@ class KaleidescapePlayer:
                 await self.device.connect()
                 await asyncio.sleep(0.5)
                 self._connected = True
-                # Note: _handle_connected() also calls _sync_full_state() when the
-                # dispatcher fires STATE_CONNECTED. This second call is intentional —
-                # it ensures state is synced before connect() returns. Both calls read
-                # from pykaleidescape's in-memory cache (zero I/O) and
-                # _handle_power_state() skips emitting if unchanged, so it's benign.
+                # Redundant with _handle_connected() but benign — unchanged
+                # values are filtered downstream by filter_changed_attributes().
                 await self._sync_full_state()
                 return True
             except (KaleidescapeError, ConnectionError) as err:
@@ -210,6 +209,7 @@ class KaleidescapePlayer:
                 await writer.drain()
             finally:
                 writer.close()
+                await writer.wait_closed()
         except (OSError, asyncio.TimeoutError) as e:
             _LOG.error("Socket command failed for '%s': %s", message.strip(), e)
 
@@ -427,7 +427,8 @@ class KaleidescapePlayer:
         await self._send_socket_command("01/9/SUBTITLES_NEXT:\r")
         return ucapi.StatusCodes.OK
 
-    async def _on_event(self, event: str, params: list[str] | None = None):
+    async def _on_event(self, event: str, params: list[str] | None = None):  # noqa: ARG002
+        # params: required by dispatcher signature (device events pass fields), intentionally unused.
         """Handle device connection state changes based on incoming event."""
         if event == "":
             return
@@ -535,7 +536,6 @@ class KaleidescapePlayer:
 
     async def _handle_events(self, event: str):
         _LOG.debug("Event received: %s", event)
-        _LOG.debug("OSD: %s", self.device.osd)
         await self._sync_full_state()
 
     def _start_position_updater(self):
