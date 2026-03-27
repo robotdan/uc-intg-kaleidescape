@@ -118,6 +118,7 @@ async def handle_user_data_response(msg: ucapi.UserDataResponse) -> ucapi.SetupA
     _LOG.info(msg)
 
     ip = msg.input_values.get("ip")
+    user_name = (msg.input_values.get("name") or "").strip()
 
     url = f"http://{ip}:8080/description.xml"
     raw_info = fetch_device_info(url)
@@ -130,7 +131,7 @@ async def handle_user_data_response(msg: ucapi.UserDataResponse) -> ucapi.SetupA
         id=sn.replace(" ", ""),
         host=ip,
         location=url,
-        friendly_name=raw_info.get("friendlyName", ""),
+        friendly_name=user_name or raw_info.get("friendlyName", ""),
         manufacturer=raw_info.get("manufacturer", ""),
         model_name=raw_info.get("modelName", ""),
         serial_number=sn
