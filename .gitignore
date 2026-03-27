@@ -30,3 +30,4 @@ intg-kaleidescape/save/
 scripts/*
 Makefile
 assets/
+.worktrees/

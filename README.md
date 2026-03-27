@@ -1,13 +1,15 @@
 # Kaleidescape Integration for Unfolded Circle Remotes
 
-## ⚠️ Disclaimer ⚠️
+[![GitHub Release](https://img.shields.io/github/v/release/johncarey70/uc-integration-kaleidescape?style=flat-square)](https://github.com/johncarey70/uc-integration-kaleidescape/releases)
+![License](https://img.shields.io/badge/license-MPL--2.0-blue?style=flat-square)
+[![GitHub issues](https://img.shields.io/github/issues/johncarey70/uc-integration-kaleidescape?style=flat-square)](https://github.com/johncarey70/uc-integration-kaleidescape/issues)
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/johncarey70/uc-integration-kaleidescape/total?style=flat-square)
 
+Control your **Kaleidescape Video Player** directly from your Unfolded Circle Remote Two or Remote 3. A media player and remote entity are exposed to the Remote core.
 
-This software may contain bugs that could affect system stability. Please use it at your own risk!
+> ⚠️ This software may contain bugs that could affect system stability. Please use it at your own risk!
 
-
-This integration driver allows control of a **Kaleidescape Video Player** device. A media player and remote entity are exposed to the Remote core. At this time only one player is supported, if you have multiple players
-I suggest you either remove the other players from the network while configuring the one you want, or use manual setup.
+> **Note:** At this time only one player is supported. If you have multiple players, either remove the other players from the network while configuring the one you want, or use manual setup.
 
 
 ## Supported media player attributes
@@ -25,9 +27,16 @@ I suggest you either remove the other players from the network while configuring
 - Power on
 - Power off
 - Directional pad
+- Back
+- Menu
 - Previous
+- Play / Pause
 - Play
+- Pause
+- Stop
 - Next
+- Fast Forward
+- Rewind
 - Movie Collections
 - Movie Covers
 - Movie List
@@ -36,6 +45,8 @@ I suggest you either remove the other players from the network while configuring
 - Shuffle
 - Subtitles
 - Alphabetize
+- Intermission
+- Cancel
 - Page Up
 - Page Down
 - Replay
