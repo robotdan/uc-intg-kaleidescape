@@ -69,7 +69,7 @@ Click on the Integration to run setup. The player should be found automatically,
 First remove the existing version by clicking the delete icon on the integration, this needs to be done twice. The first time deletes the configuration, the second time fully removes it. Then repeat the above steps.
 
 ### Run on a local server
-The are instructions already provided by unfolded circle in their included integrations, there is a docker-compile.sh in the repository that is used to build the included tar file.
+The are instructions already provided by unfolded circle in their included integrations.
 
 ## Credits
 This Integration uses the [pykaleidescape](https://github.com/SteveEasley/pykaleidescape) library written by Steve Easley
