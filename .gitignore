@@ -31,3 +31,4 @@ scripts/*
 Makefile
 assets/
 .worktrees/
+docker-compile.sh
