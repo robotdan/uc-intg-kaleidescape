@@ -142,10 +142,11 @@ async def on_unsubscribe_entities(entity_ids: list[str]) -> None:
     for device_id in devices_to_remove:
         if device_id in all_devices():
             device = get_device(device_id)
+            if device is None:
+                continue
             await device.disconnect()
             device.events.remove_all_listeners()
-
-
+            unregister_device(device_id)
 
 def _configure_new_kaleidescape(info: KaleidescapeInfo, connect: bool = False) -> None:
     """
@@ -158,9 +159,14 @@ def _configure_new_kaleidescape(info: KaleidescapeInfo, connect: bool = False) -
     :param connect: Whether to initiate connection immediately.
     """
 
-    player = get_device(info.id)
-    if player:
-        player.disconnect()
+    async def _reconfigure_existing_device(device: KaleidescapePlayer) -> None:
+        await device.disconnect()
+        if connect:
+            await device.connect()
+
+    device = get_device(info.id)
+    if device:
+        loop.create_task(_reconfigure_existing_device(device))
     else:
         device = KaleidescapePlayer(info.host, device_id=info.id)
 
@@ -170,8 +176,8 @@ def _configure_new_kaleidescape(info: KaleidescapeInfo, connect: bool = False) -
 
         register_device(info.id, device)
 
-    if connect:
-        loop.create_task(device.connect())
+        if connect:
+            loop.create_task(device.connect())
 
     _register_available_entities(info, device)
 
@@ -188,27 +194,25 @@ def _register_available_entities(info: KaleidescapeInfo, device: KaleidescapePla
             api.available_entities.remove(entity.id)
         api.available_entities.add(entity)
 
-async def on_kaleidescape_connected(device_id: str):
-    """Handle Kaleidescape connection."""
+async def on_kaleidescape_connected(device_id: str) -> None:
+    """Handle Kaleidescape connection events."""
     _LOG.debug("Kaleidescape connected: %s", device_id)
-
-    if not get_device(device_id):
-        _LOG.warning("Kaleidescape %s is not configured", device_id)
-        return
-
     await api.set_device_state(ucapi.DeviceStates.CONNECTED)
 
-
-async def on_kaleidescape_disconnected(device_id: str):
-    """Handle Kaleidescape disconnection."""
+async def on_kaleidescape_disconnected(device_id: str) -> None:
+    """Handle Kaleidescape disconnection events."""
     _LOG.debug("Kaleidescape disconnected: %s", device_id)
 
-    if not get_device(device_id):
-        _LOG.warning("Kaleidescape %s is not configured", device_id)
-        return
+    any_connected = any(
+        device is not None and getattr(device, "_connected", False)
+        for device in all_devices().values()
+    )
 
-    await api.set_device_state(ucapi.DeviceStates.DISCONNECTED)
-
+    await api.set_device_state(
+        ucapi.DeviceStates.CONNECTED
+        if any_connected
+        else ucapi.DeviceStates.DISCONNECTED
+    )
 
 async def on_kaleidescape_update(entity_id: str, update: dict[str, Any] | None) -> None:
     """
@@ -240,13 +244,10 @@ async def on_kaleidescape_update(entity_id: str, update: dict[str, Any] | None) 
     else:
         _LOG.debug("attributes not changed")
 
-
 def on_player_added(player_info: KaleidescapeInfo) -> None:
     """Handle a newly added player in the configuration."""
     _LOG.debug("New Kaleidescape Player added: %s", player_info)
-    loop.create_task(api.set_device_state(ucapi.DeviceStates.CONNECTED))
     _configure_new_kaleidescape(player_info, connect=False)
-
 
 def on_player_removed(player_info: KaleidescapeInfo | None) -> None:
     """Handle removal of a Kaleidescape Player from config."""
@@ -266,7 +267,6 @@ def on_player_removed(player_info: KaleidescapeInfo | None) -> None:
         _LOG.info("Device for device_id %s cleaned up", player_info.id)
     else:
         _LOG.debug("No Device found for removed device %s", player_info.id)
-
 
 async def _async_remove(device: KaleidescapePlayer) -> None:
     """Disconnect from receiver and remove all listeners."""
