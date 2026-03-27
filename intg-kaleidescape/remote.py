@@ -144,7 +144,7 @@ class KaleidescapeRemote(Remote):
                             case cmds.INTERMISSION:
                                 status = await self._device.intermission_toggle()
                             case cmds.MENU:
-                                status = await self._device.menu_ks()
+                                status = await self._device.menu()
                             case cmds.MOVIE_COLLECTIONS:
                                 status = await self._device.collections()
                             case cmds.MOVIE_COVERS:
