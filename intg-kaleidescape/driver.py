@@ -4,6 +4,8 @@
 import logging
 from typing import Any
 
+import kaleidescape.const as _kscape_const
+
 import config
 import ucapi
 from api import api, loop
@@ -18,6 +20,10 @@ from ucapi.media_player import States
 from utils import setup_logger
 
 _LOG = logging.getLogger("driver")
+
+# Workaround for pykaleidescape KeyError on unmapped error codes.
+# See: https://github.com/SteveEasley/pykaleidescape/issues/13
+_kscape_const.RESPONSE_ERROR.setdefault(28, "Unknown error (28)")
 
 
 @api.listens_to(ucapi.Events.CONNECT)
