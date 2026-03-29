@@ -2,10 +2,7 @@
 """Kaleidescape Remote Two/3 Integration Driver."""
 
 import logging
-from collections import defaultdict
 from typing import Any
-
-import kaleidescape.const as _kscape_const
 
 import config
 import ucapi
@@ -21,14 +18,6 @@ from ucapi.media_player import States
 from utils import setup_logger
 
 _LOG = logging.getLogger("driver")
-
-# Temporary workaround: pykaleidescape uses bare dict lookups on RESPONSE_ERROR which
-# raises KeyError for unmapped device error codes, silently killing async event tasks
-# and leaving device state stale. Replace with a defaultdict to handle any unknown code.
-# Remove once upstream fix is released: https://github.com/SteveEasley/pykaleidescape/pull/14
-_kscape_const.RESPONSE_ERROR = defaultdict(
-    lambda: "Unknown error", _kscape_const.RESPONSE_ERROR
-)
 
 
 @api.listens_to(ucapi.Events.CONNECT)
