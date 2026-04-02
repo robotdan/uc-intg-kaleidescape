@@ -160,7 +160,10 @@ def _configure_new_kaleidescape(info: KaleidescapeInfo, connect: bool = False) -
     """
 
     async def _reconfigure_existing_device(device: KaleidescapePlayer) -> None:
-        await device.disconnect()
+        try:
+            await device.disconnect()
+        except Exception as err:
+            _LOG.error("Failed to disconnect during reconfigure: %s", err)
         if connect:
             await device.connect()
 

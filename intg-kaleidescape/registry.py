@@ -67,7 +67,7 @@ async def connect_all() -> None:
     """
     Connect all registered Kaleidescape Player instances asynchronously.
     """
-    for device in iter_devices():
+    for device in list(iter_devices()):
         await device.connect()
 
 
@@ -75,7 +75,7 @@ async def disconnect_all() -> None:
     """
     Disconnect all registered Kaleidescape Player instances asynchronously.
     """
-    for device in iter_devices():
+    for device in list(iter_devices()):
         await device.disconnect()
 
 

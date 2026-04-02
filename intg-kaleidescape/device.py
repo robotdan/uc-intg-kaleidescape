@@ -86,8 +86,9 @@ class KaleidescapePlayer:
 
         # Internal connection and media state
         self._connected: bool = False
+        self._connecting: bool = False
+        self._reconnect_task: asyncio.Task | None = None
         self._attr_state = MediaStates.UNAVAILABLE
-        self._stop_retry = asyncio.Event()
 
         # Playback state
         self._position_seconds = 0
@@ -119,51 +120,92 @@ class KaleidescapePlayer:
         return self._attr_state
 
     async def connect(self) -> bool:
-        """Establish a connection to the device with retry logic."""
-        _LOG.debug("Connecting to player")
+        """Connect to the device. The library handles auto-reconnect on drops.
 
+        If the initial connection fails, a background retry task is started
+        that retries until successful or disconnect() is called.
+        """
         if self._connected:
-            _LOG.debug("Already connected disconnecting first")
-            await self.disconnect()
+            _LOG.debug("Already connected to %s", self.host)
+            return True
 
-        self._stop_retry.clear()
-        retry_delay = 1
-        max_delay = 60
+        _LOG.debug("Connecting to player at %s", self.host)
 
-        while not self._stop_retry.is_set():
-            try:
-                await self.device.connect()
-                self._connected = True
-                await asyncio.sleep(0.5)
-                await self._sync_full_state()
-                return True
-            except (KaleidescapeError, ConnectionError, OSError) as err:
-                await self.device.disconnect()
-                _LOG.error("Unable to connect to %s: %s", self.host, err)
-                self._connected = False
+        # UPSTREAM WORKAROUND: Device.disconnect() guards on is_connected which
+        # is False during STATE_RECONNECTING, silently skipping cleanup. Call
+        # Connection.disconnect() directly to reliably cancel any active
+        # reconnect task. Remove once pykaleidescape PR #17 lands and
+        # Device.disconnect() handles all states.
+        await self._cancel_reconnect_task()
+        await self.device.connection.disconnect()
 
-                try:
-                    await asyncio.wait_for(self._stop_retry.wait(), timeout=retry_delay)
-                except asyncio.exceptions.TimeoutError:
-                    pass
-
-                retry_delay = min(retry_delay * 2, max_delay)
-
-        _LOG.debug("Connect aborted due to stop signal")
-        return False
+        self._connecting = True
+        try:
+            await self.device.connect()
+            await self.device.refresh()
+            self._connected = True
+            await self._sync_full_state()
+            return True
+        except (KaleidescapeError, ConnectionError, OSError) as err:
+            _LOG.error("Unable to connect to %s: %s", self.host, err)
+            await self.device.connection.disconnect()
+            self._connected = False
+            self._reconnect_task = asyncio.create_task(self._retry_connect())
+            return False
+        finally:
+            self._connecting = False
 
     async def disconnect(self):
-        """Disconnect from the device and stop any reconnect attempts."""
-        self._stop_retry.set()  # signal reconnect loop to stop
-
-        if self._connected:
-            _LOG.debug("Disconnecting from player")
-            await self.device.disconnect()
-            self._connected = False
-        else:
-            _LOG.debug("Already disconnected skipping")
-
+        """Disconnect from the device and cancel all reconnect activity."""
+        _LOG.debug("Disconnecting from player at %s", self.host)
+        await self._cancel_reconnect_task()
+        self._stop_position_updater()
+        # UPSTREAM WORKAROUND: see comment in connect().
+        await self.device.connection.disconnect()
+        self._connected = False
         await self._handle_power_state()
+
+    async def _cancel_reconnect_task(self):
+        """Cancel the integration-level retry task if running."""
+        if self._reconnect_task is not None:
+            self._reconnect_task.cancel()
+            try:
+                await self._reconnect_task
+            except asyncio.CancelledError:
+                pass
+            self._reconnect_task = None
+
+    async def _retry_connect(self):
+        """Retry initial connection until successful or cancelled.
+
+        The library's reconnect=True only activates after a successful first
+        connection (by design). This task provides persistent retry for the
+        initial connect failure case at the integration level.
+
+        Runs indefinitely — cancellation is handled by _cancel_reconnect_task()
+        which is called from disconnect() and connect(). There is no automatic
+        give-up because there is no other recovery path for the user.
+        """
+        # UPSTREAM: _reconnect_delay is a private attribute on Connection.
+        # Replace with a public accessor if pykaleidescape exposes one.
+        delay = self.device.connection._reconnect_delay or 5
+        while True:
+            _LOG.debug("Retrying connection to %s in %ss", self.host, delay)
+            await asyncio.sleep(delay)
+            self._connecting = True
+            try:
+                await self.device.connect()
+                await self.device.refresh()
+                self._connected = True
+                await self._sync_full_state()
+                self._reconnect_task = None
+                _LOG.info("Reconnected to %s", self.host)
+                return
+            except (KaleidescapeError, ConnectionError, OSError) as err:
+                _LOG.warning("Retry connect to %s failed: %s", self.host, err)
+                await self.device.connection.disconnect()
+            finally:
+                self._connecting = False
 
     async def send_command(self, command: str) -> ucapi.StatusCodes:
         """Send a command to a device."""
@@ -455,17 +497,37 @@ class KaleidescapePlayer:
         await handler()
 
     async def _handle_connected(self):
+        """Handle library auto-reconnect completion.
+
+        UPSTREAM WORKAROUND: The library dispatches STATE_CONNECTED during both
+        initial connect() and auto-reconnect, but doesn't call refresh() after
+        reconnect. We gate on _connecting to avoid double refresh/sync during
+        initial connect (where connect() already handles it), and only run the
+        full resync on auto-reconnect. Remove the _connecting guard once the
+        library either suppresses the event during initial connect or calls
+        refresh() itself after reconnect.
+        """
         self._connected = True
         self.events.emit(Events.CONNECTED.name, self.device_id)
 
-        await asyncio.sleep(1)
+        if self._connecting:
+            return
+
+        try:
+            await self.device.refresh()
+        except (KaleidescapeError, ConnectionError, OSError) as err:
+            _LOG.warning("Failed to refresh state after reconnect: %s", err)
+
         await self._sync_full_state()
 
     async def _sync_full_state(self) -> None:
         """Sync and emit the full current device state."""
         await self._handle_power_state()
         await self._handle_play_status()
+        await self._sync_media_attributes()
 
+    async def _sync_media_attributes(self) -> None:
+        """Emit current media attributes from the library's dataclasses."""
         await self._emit_update(
             EntityPrefix.MEDIA_PLAYER.value,
             MediaAttr.MEDIA_IMAGE_URL,
@@ -560,9 +622,15 @@ class KaleidescapePlayer:
         await self._emit_update(EntityPrefix.REMOTE.value, MediaAttr.STATE, self.state)
 
     async def _handle_events(self, event: str):
+        """Handle library events by syncing media state.
+
+        The library has already parsed the event and updated its dataclasses
+        before dispatching, so we just read the current values and emit
+        updates for media-related attributes. Power state has its own handler.
+        """
         _LOG.debug("Event received: %s", event)
-        _LOG.debug("OSD: %s", self.device.osd)
-        await self._sync_full_state()
+        await self._handle_play_status()
+        await self._sync_media_attributes()
 
     def _start_position_updater(self):
         if self._position_updater_task is None or self._position_updater_task.done():
