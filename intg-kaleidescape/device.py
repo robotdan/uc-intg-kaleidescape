@@ -23,6 +23,8 @@ from ucapi.media_player import States as MediaStates
 
 _LOG = logging.getLogger(__name__)
 
+_RECONNECT_DELAY = 5
+
 class Events(IntEnum):
     """Driver lifecycle events used internally for signaling."""
 
@@ -79,7 +81,7 @@ class KaleidescapePlayer:
         # Identity and core connection
         self.device_id = device_id or "unknown"
         self.host = host
-        self.device = KaleidescapeDevice(host, timeout=5, reconnect=True, reconnect_delay=5)
+        self.device = KaleidescapeDevice(host, timeout=5, reconnect=True, reconnect_delay=_RECONNECT_DELAY)
 
         # Event loop setup
         self._event_loop = loop or asyncio.get_running_loop()
@@ -131,13 +133,8 @@ class KaleidescapePlayer:
 
         _LOG.debug("Connecting to player at %s", self.host)
 
-        # UPSTREAM WORKAROUND: Device.disconnect() guards on is_connected which
-        # is False during STATE_RECONNECTING, silently skipping cleanup. Call
-        # Connection.disconnect() directly to reliably cancel any active
-        # reconnect task. Remove once pykaleidescape PR #17 lands and
-        # Device.disconnect() handles all states.
         await self._cancel_reconnect_task()
-        await self.device.connection.disconnect()
+        await self.device.disconnect()
 
         self._connecting = True
         try:
@@ -148,7 +145,7 @@ class KaleidescapePlayer:
             return True
         except (KaleidescapeError, ConnectionError, OSError) as err:
             _LOG.error("Unable to connect to %s: %s", self.host, err)
-            await self.device.connection.disconnect()
+            await self.device.disconnect()
             self._connected = False
             self._reconnect_task = asyncio.create_task(self._retry_connect())
             return False
@@ -160,8 +157,7 @@ class KaleidescapePlayer:
         _LOG.debug("Disconnecting from player at %s", self.host)
         await self._cancel_reconnect_task()
         self._stop_position_updater()
-        # UPSTREAM WORKAROUND: see comment in connect().
-        await self.device.connection.disconnect()
+        await self.device.disconnect()
         self._connected = False
         await self._handle_power_state()
 
@@ -186,9 +182,7 @@ class KaleidescapePlayer:
         which is called from disconnect() and connect(). There is no automatic
         give-up because there is no other recovery path for the user.
         """
-        # UPSTREAM: _reconnect_delay is a private attribute on Connection.
-        # Replace with a public accessor if pykaleidescape exposes one.
-        delay = self.device.connection._reconnect_delay or 5
+        delay = _RECONNECT_DELAY
         while True:
             _LOG.debug("Retrying connection to %s in %ss", self.host, delay)
             await asyncio.sleep(delay)
@@ -203,7 +197,7 @@ class KaleidescapePlayer:
                 return
             except (KaleidescapeError, ConnectionError, OSError) as err:
                 _LOG.warning("Retry connect to %s failed: %s", self.host, err)
-                await self.device.connection.disconnect()
+                await self.device.disconnect()
             finally:
                 self._connecting = False
 
@@ -499,13 +493,14 @@ class KaleidescapePlayer:
     async def _handle_connected(self):
         """Handle library auto-reconnect completion.
 
-        UPSTREAM WORKAROUND: The library dispatches STATE_CONNECTED during both
-        initial connect() and auto-reconnect, but doesn't call refresh() after
-        reconnect. We gate on _connecting to avoid double refresh/sync during
-        initial connect (where connect() already handles it), and only run the
-        full resync on auto-reconnect. Remove the _connecting guard once the
-        library either suppresses the event during initial connect or calls
-        refresh() itself after reconnect.
+        The library dispatches STATE_CONNECTED during both initial connect()
+        and auto-reconnect, and doesn't refresh device state after reconnect.
+        We gate on _connecting to avoid running refresh/sync while
+        Device.connect() is still populating device info.
+
+        Pending upstream: pykaleidescape PR #18 (auto-refresh after reconnect)
+        and PR #19 (suppress signal during initial connect) would let us
+        remove the _connecting guard and simplify this to just _sync_full_state().
         """
         self._connected = True
         self.events.emit(Events.CONNECTED.name, self.device_id)
