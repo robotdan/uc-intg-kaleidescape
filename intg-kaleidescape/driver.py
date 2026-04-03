@@ -85,27 +85,30 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
         if not device:
             _LOG.error("Failed to subscribe entities: no Kaleidescape configuration found for %s", device_id)
             return
-        # Re-register available entities so the ucapi framework can track them on future subscribes.
-        # _configure_new_kaleidescape already registered them, so this is a no-op here — the state
-        # sync will happen via on_kaleidescape_update once the connect task completes.
-        return
+    else:
+        # Re-register available entities if they were cleared (e.g. by a setup abort).
+        if device_config:
+            _register_available_entities(device_config, device)
+        if not device._connected:
+            loop.create_task(device.connect())
 
-    # Re-register available entities if they were cleared (e.g. by a setup abort).
-    if device_config:
-        _register_available_entities(device_config, device)
-
-    # Connect if not already connected
-    if not device._connected:
-        loop.create_task(device.connect())
-        return
-
-    # Sync current device state to all subscribed configured entities.
-    # Only runs when device was already registered and connected — newly created or
-    # reconnecting devices get state pushed via on_kaleidescape_update after connect.
+    # The ucapi framework moves entities from available → configured before calling this
+    # handler. If available_entities was empty at that point (e.g. cleared by a setup abort),
+    # the move failed and entities are missing from configured. Fix that up now that
+    # _register_available_entities has restored them.
     for entity_id in entity_ids:
-        entity = api.configured_entities.get(entity_id)
-        if entity:
-            _update_entity_attributes(entity_id, entity, device.attributes)
+        if not api.configured_entities.contains(entity_id):
+            entity = api.available_entities.get(entity_id)
+            if entity:
+                api.configured_entities.add(entity)
+
+    # Sync current device state for already-connected devices. Newly created or reconnecting
+    # devices get state pushed via on_kaleidescape_update after connect completes.
+    if device._connected:
+        for entity_id in entity_ids:
+            entity = api.configured_entities.get(entity_id)
+            if entity:
+                _update_entity_attributes(entity_id, entity, device.attributes)
 
 
 def _update_entity_attributes(entity_id: str, entity, attributes: dict):
