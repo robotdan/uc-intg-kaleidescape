@@ -93,7 +93,7 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
     # After reconfigure the Remote won't send a new connect event (it's
     # already connected), but the device was recreated without connecting.
     # Kick off a connect so state eventually resolves from UNAVAILABLE.
-    if not device._connected:
+    if not device.connected:
         loop.create_task(device.connect())
 
     for entity_id in entity_ids:

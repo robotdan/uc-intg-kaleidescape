@@ -112,6 +112,11 @@ class KaleidescapePlayer:
         return updated_data
 
     @property
+    def connected(self) -> bool:
+        """Return true if device is connected."""
+        return self._connected
+
+    @property
     def is_on(self) -> bool:
         """Return true if device is on."""
         return self.device.power.state == DEVICE_POWER_STATE_ON
