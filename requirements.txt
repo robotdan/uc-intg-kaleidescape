@@ -1,3 +1,3 @@
-pykaleidescape @ git+https://github.com/SteveEasley/pykaleidescape.git@49082279a89f45bb1ad47c1ecc4e330f6590024a
+pykaleidescape @ git+https://github.com/SteveEasley/pykaleidescape.git@v1.1.5
 requests==2.32.3
 ucapi==0.3.1
