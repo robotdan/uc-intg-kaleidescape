@@ -9,10 +9,8 @@ import logging
 
 import config
 import ucapi
-from api import api
 from device import KaleidescapeInfo
 from discover import discover_kaleidescape_device, fetch_device_info
-from registry import clear_devices
 
 _LOG = logging.getLogger(__name__)
 
@@ -55,7 +53,7 @@ async def driver_setup_handler(msg: ucapi.SetupDriver) -> ucapi.SetupAction:
         return await handle_user_data_response(msg)
     if isinstance(msg, ucapi.AbortDriverSetup):
         _LOG.info("Setup was aborted with code: %s", msg.error)
-        clear_devices()
+        return ucapi.SetupError()
 
     _LOG.error("Error during setup")
     return ucapi.SetupError()
@@ -74,9 +72,6 @@ async def handle_driver_setup(msg: ucapi.DriverSetupRequest) -> ucapi.SetupActio
 
     if msg.reconfigure:
         _LOG.info("Starting reconfiguration")
-
-    api.available_entities.clear()
-    api.configured_entities.clear()
 
     if msg.setup_data.get("manual") == "true":
         _LOG.info("Entering manual setup settings")
