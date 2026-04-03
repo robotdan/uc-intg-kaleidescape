@@ -90,6 +90,12 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
             _LOG.error("Failed to subscribe entities: no Kaleidescape configuration found for %s", device_id)
         return
 
+    # After reconfigure the Remote won't send a new connect event (it's
+    # already connected), but the device was recreated without connecting.
+    # Kick off a connect so state eventually resolves from UNAVAILABLE.
+    if not device._connected:
+        loop.create_task(device.connect())
+
     for entity_id in entity_ids:
         _LOG.debug("entity id = %s", entity_id)
         entity = api.configured_entities.get(entity_id)
@@ -256,6 +262,8 @@ def on_player_removed(player_info: KaleidescapeInfo | None) -> None:
     """Handle removal of a Kaleidescape Player from config."""
     if player_info is None:
         _LOG.info("All devices cleared from config.")
+        for device in list(all_devices().values()):
+            loop.create_task(_async_remove(device))
         clear_devices()
         api.configured_entities.clear()
         api.available_entities.clear()
