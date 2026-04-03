@@ -144,10 +144,6 @@ class KaleidescapePlayer:
         self._connecting = True
         try:
             await self.device.connect()
-            await self.device.refresh()
-            self._connected = True
-            await self._sync_full_state()
-            return True
         except (KaleidescapeError, ConnectionError, OSError) as err:
             _LOG.error("Unable to connect to %s: %s", self.host, err)
             await self.device.disconnect()
@@ -156,6 +152,16 @@ class KaleidescapePlayer:
             return False
         finally:
             self._connecting = False
+
+        self._connected = True
+
+        try:
+            await self.device.refresh()
+        except (KaleidescapeError, ConnectionError, OSError) as err:
+            _LOG.warning("Failed to refresh state after connect: %s", err)
+
+        await self._sync_full_state()
+        return True
 
     async def disconnect(self):
         """Disconnect from the device and cancel all reconnect activity."""
@@ -194,17 +200,24 @@ class KaleidescapePlayer:
             self._connecting = True
             try:
                 await self.device.connect()
-                await self.device.refresh()
-                self._connected = True
-                await self._sync_full_state()
-                self._reconnect_task = None
-                _LOG.info("Reconnected to %s", self.host)
-                return
             except (KaleidescapeError, ConnectionError, OSError) as err:
                 _LOG.warning("Retry connect to %s failed: %s", self.host, err)
                 await self.device.disconnect()
+                continue
             finally:
                 self._connecting = False
+
+            self._connected = True
+
+            try:
+                await self.device.refresh()
+            except (KaleidescapeError, ConnectionError, OSError) as err:
+                _LOG.warning("Failed to refresh state after reconnect: %s", err)
+
+            await self._sync_full_state()
+            self._reconnect_task = None
+            _LOG.info("Reconnected to %s", self.host)
+            return
 
     async def send_command(self, command: str) -> ucapi.StatusCodes:
         """Send a command to a device."""
