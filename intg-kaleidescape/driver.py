@@ -73,22 +73,24 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
     if not entity_ids:
         return
 
-    # Assume all entities share the same device
-    first_entity = api.configured_entities.get(entity_ids[0])
-    if not first_entity:
-        _LOG.error("First entity %s not found in configured_entities", entity_ids[0])
-        return
-
-    device_id = config.extract_device_id(first_entity)
+    # Extract device_id directly from entity_id (e.g. "media_player.ABC123" -> "ABC123")
+    device_id = entity_ids[0].split(".", 1)[1]
     device = get_device(device_id)
+    device_config = config.devices.get(device_id)
 
     if not device:
-        fallback_device = config.devices.get(device_id)
-        if fallback_device:
-            _configure_new_kaleidescape(fallback_device, connect=True)
-        else:
+        if device_config:
+            _configure_new_kaleidescape(device_config, connect=True)
+            device = get_device(device_id)
+        if not device:
             _LOG.error("Failed to subscribe entities: no Kaleidescape configuration found for %s", device_id)
-        return
+            return
+    else:
+        # Re-register available entities if they were cleared (e.g. by a setup abort).
+        if device_config:
+            _register_available_entities(device_config, device)
+        if not device._connected:
+            loop.create_task(device.connect())
 
     # After reconfigure the Remote won't send a new connect event (it's
     # already connected), but the device was recreated without connecting.
@@ -96,14 +98,23 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
     if not device.connected:
         loop.create_task(device.connect())
 
+    # The ucapi framework moves entities from available → configured before calling this
+    # handler. If available_entities was empty at that point (e.g. cleared by a setup abort),
+    # the move failed and entities are missing from configured. Fix that up now that
+    # _register_available_entities has restored them.
     for entity_id in entity_ids:
-        _LOG.debug("entity id = %s", entity_id)
-        entity = api.configured_entities.get(entity_id)
-        if not entity:
-            continue
+        if not api.configured_entities.contains(entity_id):
+            entity = api.available_entities.get(entity_id)
+            if entity:
+                api.configured_entities.add(entity)
 
-        # Handle media_player or remote entities
-        _update_entity_attributes(entity_id, entity, device.attributes)
+    # Sync current device state for already-connected devices. Newly created or reconnecting
+    # devices get state pushed via on_kaleidescape_update after connect completes.
+    if device._connected:
+        for entity_id in entity_ids:
+            entity = api.configured_entities.get(entity_id)
+            if entity:
+                _update_entity_attributes(entity_id, entity, device.attributes)
 
 
 def _update_entity_attributes(entity_id: str, entity, attributes: dict):
