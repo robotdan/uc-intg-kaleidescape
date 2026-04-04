@@ -114,6 +114,8 @@ class KaleidescapeMediaPlayer(MediaPlayer):
                 res = await self._device.cursor_left()
             case Commands.CURSOR_RIGHT:
                 res = await self._device.cursor_right()
+            case Commands.HOME:
+                res = await self._device.collections()
             case Commands.MENU:
                 res = await self._device.menu()
             case Commands.FAST_FORWARD:
