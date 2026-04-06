@@ -88,7 +88,6 @@ class KaleidescapePlayer:
 
         # Internal connection and media state
         self._connected: bool = False
-        self._connecting: bool = False
         self._reconnect_task: asyncio.Task | None = None
         self._attr_state = MediaStates.UNAVAILABLE
 
@@ -141,7 +140,6 @@ class KaleidescapePlayer:
         await self._cancel_reconnect_task()
         await self.device.disconnect()
 
-        self._connecting = True
         try:
             await self.device.connect()
         except (KaleidescapeError, ConnectionError, OSError) as err:
@@ -150,16 +148,9 @@ class KaleidescapePlayer:
             self._connected = False
             self._reconnect_task = asyncio.create_task(self._retry_connect())
             return False
-        finally:
-            self._connecting = False
 
         self._connected = True
-
-        try:
-            await self.device.refresh()
-        except (KaleidescapeError, ConnectionError, OSError) as err:
-            _LOG.warning("Failed to refresh state after connect: %s", err)
-
+        await self.device.refresh()
         await self._sync_full_state()
         return True
 
@@ -197,23 +188,15 @@ class KaleidescapePlayer:
         while True:
             _LOG.debug("Retrying connection to %s in %ss", self.host, delay)
             await asyncio.sleep(delay)
-            self._connecting = True
             try:
                 await self.device.connect()
             except (KaleidescapeError, ConnectionError, OSError) as err:
                 _LOG.warning("Retry connect to %s failed: %s", self.host, err)
                 await self.device.disconnect()
                 continue
-            finally:
-                self._connecting = False
 
             self._connected = True
-
-            try:
-                await self.device.refresh()
-            except (KaleidescapeError, ConnectionError, OSError) as err:
-                _LOG.warning("Failed to refresh state after reconnect: %s", err)
-
+            await self.device.refresh()
             await self._sync_full_state()
             self._reconnect_task = None
             _LOG.info("Reconnected to %s", self.host)
@@ -511,26 +494,12 @@ class KaleidescapePlayer:
     async def _handle_connected(self):
         """Handle library auto-reconnect completion.
 
-        The library dispatches STATE_CONNECTED during both initial connect()
-        and auto-reconnect, and doesn't refresh device state after reconnect.
-        We gate on _connecting to avoid running refresh/sync while
-        Device.connect() is still populating device info.
-
-        Pending upstream: pykaleidescape PR #18 (auto-refresh after reconnect)
-        and PR #19 (suppress signal during initial connect) would let us
-        remove the _connecting guard and simplify this to just _sync_full_state().
+        The library only dispatches STATE_CONNECTED on auto-reconnect (not
+        during initial connect) and refreshes device state before dispatching,
+        so we just need to sync the integration-level state.
         """
         self._connected = True
         self.events.emit(Events.CONNECTED.name, self.device_id)
-
-        if self._connecting:
-            return
-
-        try:
-            await self.device.refresh()
-        except (KaleidescapeError, ConnectionError, OSError) as err:
-            _LOG.warning("Failed to refresh state after reconnect: %s", err)
-
         await self._sync_full_state()
 
     async def _sync_full_state(self) -> None:
