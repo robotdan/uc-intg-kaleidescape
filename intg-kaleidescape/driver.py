@@ -89,8 +89,6 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
         # Re-register available entities if they were cleared (e.g. by a setup abort).
         if device_config:
             _register_available_entities(device_config, device)
-        if not device._connected:
-            loop.create_task(device.connect())
 
     # After reconfigure the Remote won't send a new connect event (it's
     # already connected), but the device was recreated without connecting.
@@ -110,7 +108,7 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
 
     # Sync current device state for already-connected devices. Newly created or reconnecting
     # devices get state pushed via on_kaleidescape_update after connect completes.
-    if device._connected:
+    if device.connected:
         for entity_id in entity_ids:
             entity = api.configured_entities.get(entity_id)
             if entity:
@@ -224,7 +222,7 @@ async def on_kaleidescape_disconnected(device_id: str) -> None:
     _LOG.debug("Kaleidescape disconnected: %s", device_id)
 
     any_connected = any(
-        device is not None and getattr(device, "_connected", False)
+        device is not None and device.connected
         for device in all_devices().values()
     )
 
