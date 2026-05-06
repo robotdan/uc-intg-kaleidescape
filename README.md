@@ -1,13 +1,11 @@
 # Kaleidescape Integration for Unfolded Circle Remotes
 
-[![GitHub Release](https://img.shields.io/github/v/release/johncarey70/uc-integration-kaleidescape?style=flat-square)](https://github.com/johncarey70/uc-integration-kaleidescape/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/robotdan/uc-intg-kaleidescape?style=flat-square)](https://github.com/robotdan/uc-intg-kaleidescape/releases)
 ![License](https://img.shields.io/badge/license-MPL--2.0-blue?style=flat-square)
-[![GitHub issues](https://img.shields.io/github/issues/johncarey70/uc-integration-kaleidescape?style=flat-square)](https://github.com/johncarey70/uc-integration-kaleidescape/issues)
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/johncarey70/uc-integration-kaleidescape/total?style=flat-square)
+[![GitHub issues](https://img.shields.io/github/issues/robotdan/uc-intg-kaleidescape?style=flat-square)](https://github.com/robotdan/uc-intg-kaleidescape/issues)
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/robotdan/uc-intg-kaleidescape/total?style=flat-square)
 
 Control your **Kaleidescape Video Player** directly from your Unfolded Circle Remote Two or Remote 3. A media player and remote entity are exposed to the Remote core.
-
-> ⚠️ This software may contain bugs that could affect system stability. Please use it at your own risk!
 
 > **Note:** At this time only one player is supported. If you have multiple players, either remove the other players from the network while configuring the one you want, or use manual setup.
 
@@ -56,7 +54,7 @@ Control your **Kaleidescape Video Player** directly from your Unfolded Circle Re
 ### Run on the remote as a custom integration driver
 
 #### 1 - Download Integration Driver
-Download the uc-intg-kaleidescape-x.x.x-aarch64.tar.gz archive in the assets section from the [latest release](https://github.com/johncarey70/uc-integration-kaleidescape/releases/latest).
+Download the uc-intg-kaleidescape-x.x.x-aarch64.tar.gz archive in the assets section from the [latest release](https://github.com/robotdan/uc-intg-kaleidescape/releases/latest).
 
 #### 2 - Upload & Installation
 Upload in the Web Configurator
